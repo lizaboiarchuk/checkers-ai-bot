@@ -1,34 +1,80 @@
 import asyncio
-import sys
-import threading
-
-from monkey_patched.game import Game
-
-# Init components
-game = Game()
+import logging
+import aiohttp
+import Searcher
+from game import Game
 
 
-def start_server(loop):
-    from backend.server import main
+class QqBot:
+    def __init__(self, loop):
+        self._api_url = 'http://localhost:8081'
+        self._session = aiohttp.ClientSession()
+        self._game = Game()
+        self._loop = loop
+        self._last_moves = []
 
-    threading.Thread(target=main, args=(loop,)).start()
+    async def _prepare_player(self):
+        async with self._session.post(
+                f'{self._api_url}/game',
+                params={'team_name': "Qq"}
+        ) as resp:
+            res = (await resp.json())['data']
+            self._player = {
+                'color': res['color'],
+                'token': res['token']
+            }
 
+    async def _make_move(self, move):
+        json = {'move': move}
+        headers = {'Authorization': f'Token {self._player["token"]}'}
+        async with self._session.post(
+                f'{self._api_url}/move',
+                json=json,
+                headers=headers
+        ) as resp:
+            resp = (await resp.json())['data']
+            logging.info(f'Qq made move {move}, response: {resp}')
 
-def test_server(loop, rand_sleep=False):
-    from api_tester import ApiTester
+    async def _get_game(self):
+        async with self._session.get(f'{self._api_url}/game') as resp:
+            return (await resp.json())['data']
 
-    threading.Thread(target=ApiTester(loop, rand_sleep=rand_sleep).start_test).start()
+    async def _play_game(self):
+        current_game_progress = await self._get_game()
+        is_finished = current_game_progress['is_finished']
+        is_started = current_game_progress['is_started']
 
+        while is_started and not is_finished:
+            if current_game_progress['last_move'] is not None and not self._last_moves == current_game_progress['last_move']['last_moves']:
 
-def run_ui():
-    from board_drawing import BDManager
+                self._game.move(current_game_progress['last_move']['last_moves'][-1])
+                self._last_moves = current_game_progress['last_move']['last_moves']
 
-    BDManager()
+            if current_game_progress['whose_turn'] == self._player['color']:
+                async with self._session.get(f'http://localhost:8081/game') as resp:
+                    curr_state = await resp.json()
+                move = Searcher.find_move(self._game, curr_state['data']['available_time'] - 3)
+                await self._make_move(move)
 
+            current_game_progress = await self._get_game()
+            is_finished = current_game_progress['is_finished']
+            is_started = current_game_progress['is_started']
 
-if __name__ == '__main__':
-    _loop = asyncio.get_event_loop()
-    start_server(_loop)
-    if sys.argv.__len__() > 1 and sys.argv[1] == 'test':
-        test_server(_loop, rand_sleep=False)
-    run_ui()
+    async def start(self):
+        logging.info('Qq was initialized')
+        await self._prepare_player()
+        await asyncio.sleep(1)
+        await self._play_game()
+        logging.info('Game finished')
+        last_game_progress = await self._get_game()
+        logging.info(str(last_game_progress))
+        await self._session.close()
+
+async def init():
+    loop = asyncio.get_event_loop()
+    player = QqBot(loop)
+    await player.start()
+
+if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(init())
