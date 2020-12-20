@@ -1,6 +1,5 @@
 from checkers import game
 
-
 class Game(game.Game):
     def __init__(self):
         self._set_winner = None

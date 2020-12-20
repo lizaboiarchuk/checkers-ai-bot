@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import aiohttp
-import Searcher
+import searcher
 from game import Game
 
 
@@ -12,6 +12,7 @@ class QqBot:
         self._game = Game()
         self._loop = loop
         self._last_moves = []
+        self._time = 3
 
     async def _prepare_player(self):
         async with self._session.post(
@@ -45,15 +46,15 @@ class QqBot:
         is_started = current_game_progress['is_started']
 
         while is_started and not is_finished:
-            if current_game_progress['last_move'] is not None and not self._last_moves == current_game_progress['last_move']['last_moves']:
-
+            if current_game_progress['last_move'] is not None and not self._last_moves == \
+                                                                      current_game_progress['last_move']['last_moves']:
                 self._game.move(current_game_progress['last_move']['last_moves'][-1])
                 self._last_moves = current_game_progress['last_move']['last_moves']
 
             if current_game_progress['whose_turn'] == self._player['color']:
                 async with self._session.get(f'http://localhost:8081/game') as resp:
                     curr_state = await resp.json()
-                move = Searcher.find_move(self._game, curr_state['data']['available_time'] - 3)
+                move = searcher.find_move(self._game, self._time)
                 await self._make_move(move)
 
             current_game_progress = await self._get_game()
@@ -70,10 +71,12 @@ class QqBot:
         logging.info(str(last_game_progress))
         await self._session.close()
 
+
 async def init():
     loop = asyncio.get_event_loop()
     player = QqBot(loop)
     await player.start()
+
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
