@@ -50,11 +50,13 @@ class QqBot:
                                                                       current_game_progress['last_move']['last_moves']:
                 self._game.move(current_game_progress['last_move']['last_moves'][-1])
                 self._last_moves = current_game_progress['last_move']['last_moves']
+                print(f'Move from server: {self._last_moves}')
 
             if current_game_progress['whose_turn'] == self._player['color']:
                 async with self._session.get(f'http://localhost:8081/game') as resp:
                     curr_state = await resp.json()
                 move = searcher.find_move(self._game, self._time)
+                print(f'Our move {move}')
                 await self._make_move(move)
 
             current_game_progress = await self._get_game()
